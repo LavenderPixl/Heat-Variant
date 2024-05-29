@@ -14,6 +14,7 @@ url = "http://10.0.0.2:8086"
 client = influxdb_client.InfluxDBClient(url=url, token=token, org=org)
 write_api = client.write_api(write_options=SYNCHRONOUS)
 
+
 for value in range(5):
     point = (
         Point("measurement1")
