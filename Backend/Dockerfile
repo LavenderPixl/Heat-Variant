@@ -30,4 +30,4 @@ USER appuser
 COPY . .
 
 EXPOSE 8000
-CMD python app.py
+CMD fastapi run app.py
