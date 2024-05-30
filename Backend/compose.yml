@@ -1,7 +1,11 @@
 services:
-  server:
+  api:
     build:
       context: .
+    develop:
+      watch:
+        - action: rebuild
+          path: .
     env_file:
       - .env
     ports:
