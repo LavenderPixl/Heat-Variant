@@ -15,9 +15,9 @@ app = FastAPI()
 token = os.getenv("INFLUXDB_TOKEN")
 org = "heat_variant"
 bucket = "Air Data"
-url = "http://10.0.0.2:8086"
+influx_url = "http://10.0.0.2:8086"
 
-client = influxdb_client.InfluxDBClient(url=url, token=token, org=org)
+client = influxdb_client.InfluxDBClient(url=influx_url, token=token, org=org)
 write_api = client.write_api(write_options=SYNCHRONOUS)
 
 
@@ -29,7 +29,7 @@ class Apartment(BaseModel):
     email: str
     phone_number: str
 
-
+ 
 class AirData(BaseModel):
     mc_id: str
     temperature: float = 0
@@ -69,13 +69,16 @@ async def get_temperature(data: AirData):
 async def deliver_data(data: AirData):
     p = (
         Point("Air")
-        .tag("data.apt_id", 1)
+        .tag("micro controller", data.mc_id)
         .field("temperature", data.temperature)
         .field("pressure", data.pressure)
         .field("humidity", data.humidity)
         .field("air_quality", data.air_quality)
     )
-    write_api.write(bucket, org, p)
+    try:
+        write_api.write(bucket, org, p)
+    except HTTPException as e:
+        print(f"Bucket cannot be found. Error: {e}")
     time.sleep(1)
 
 
