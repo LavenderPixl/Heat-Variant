@@ -11,19 +11,40 @@ services:
     ports:
       - 8000:8000
     depends_on:
-      db:
+      influx:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
     networks:
       backend:
-        ipv4_address: 10.0.0.3
+        ipv4_address: 10.0.0.4
       frontend:
-  db:
+  mysql:
+    image: mysql
+    restart: always
+    ports:
+      - 8080:3306
+    volumes:
+      - slow-db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=Admin123
+      - MYSQL_DATABASE=Heat Variant
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=Admin123
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
+      timeout: 10s
+      retries: 10
+    networks:
+      backend:
+        ipv4_address: 10.0.0.3
+  influx:
     image: influxdb:2
     restart: always
     ports:
       - 8086:8086
     volumes:
-      - db-data:/var/lib/influxdb2
+      - fast-db:/var/lib/influxdb2
     environment:
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=Admin123
@@ -38,16 +59,16 @@ services:
     networks:
       backend:
         ipv4_address: 10.0.0.2
-
 volumes:
-  db-data:
+  slow-db:
+  fast-db:
 
 networks:
   backend:
     driver: bridge
     ipam:
       config:
-        - subnet: 10.0.0.0/29
+        - subnet: 10.0.0.0/28
           gateway: 10.0.0.1
   frontend:
     driver: bridge

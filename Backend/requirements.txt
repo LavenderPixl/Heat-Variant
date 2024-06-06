@@ -3,3 +3,4 @@ influxdb-client==1.43.0
 fastapi~=0.111.0
 uvicorn~=0.30.0
 pydantic~=2.7.2
+mysql-connector-python~=8.4.0
