@@ -3,6 +3,7 @@ import http
 import asyncio
 import influxdb_client, os, time
 import uvicorn
+import mysql.connector
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from dotenv import load_dotenv
@@ -11,6 +12,24 @@ from pydantic import BaseModel
 
 load_dotenv()
 app = FastAPI()
+
+msdb = mysql.connector.connect(
+    host=os.getenv("MYSQL_HOST"),
+    user=os.getenv("MYSQL_USER"),
+    password=os.getenv("MYSQL_PASSWORD"),
+)
+
+ms = msdb.cursor()
+try:
+    ms.execute("CREATE DATABASE IF NOT EXISTS HeatVariant")
+    ms.execute("USE HeatVariant")
+    ms.execute("CREATE TABLE IF NOT EXISTS Apartments (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(32))")
+    print("Db HeatVariant created successfully.")
+
+    for x in ms:
+        print(x)
+except mysql.connector.Error as err:
+    print("Something went wrong: {}".format(err))
 
 token = os.getenv("INFLUXDB_TOKEN")
 org = "heat_variant"
@@ -29,7 +48,7 @@ class Apartment(BaseModel):
     email: str
     phone_number: str
 
- 
+
 class AirData(BaseModel):
     mc_id: str
     temperature: float = 0
