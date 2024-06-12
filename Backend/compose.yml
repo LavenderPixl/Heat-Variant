@@ -17,7 +17,7 @@ services:
         condition: service_healthy
     networks:
       backend:
-        ipv4_address: 10.0.0.4
+        ipv4_address: 172.0.0.4
       frontend:
   mysql:
     image: mysql
@@ -37,7 +37,7 @@ services:
       retries: 10
     networks:
       backend:
-        ipv4_address: 10.0.0.3
+        ipv4_address: 172.0.0.3
       frontend:
   influx:
     image: influxdb:2
@@ -59,7 +59,7 @@ services:
       retries: 5
     networks:
       backend:
-        ipv4_address: 10.0.0.2
+        ipv4_address: 172.0.0.2
 volumes:
   slow-db:
   fast-db:
@@ -69,7 +69,7 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 10.0.0.0/28
-          gateway: 10.0.0.1
+        - subnet: 172.0.0.0/28
+          gateway: 172.0.0.1
   frontend:
     driver: bridge
