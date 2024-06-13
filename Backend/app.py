@@ -3,6 +3,7 @@ import http
 import asyncio
 import influxdb_client, os, time
 import uvicorn
+import asyncio
 import mysql.connector
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -20,15 +21,6 @@ msdb = mysql.connector.connect(
 )
 
 ms = msdb.cursor()
-try:
-    ms.execute("CREATE DATABASE IF NOT EXISTS HeatVariant")
-    print("DB HeatVariant created successfully.")
-    ms.execute("USE HeatVariant")
-    ms.execute("CREATE TABLE IF NOT EXISTS Apartments (id INT PRIMARY KEY AUTO_INCREMENT, mc_id VARCHAR(32), "
-               "floor INT, apt_number VARCHAR(32), email VARCHAR(32), phone_number VARCHAR(32))")
-    print("Apartment table created successfully.")
-except mysql.connector.Error as err:
-    print("Something went wrong: {}".format(err))
 
 token = os.getenv("INFLUXDB_TOKEN")
 org = "heat_variant"
@@ -37,6 +29,32 @@ influx_url = "http://172.0.0.2:8086"
 
 client = influxdb_client.InfluxDBClient(url=influx_url, token=token, org=org)
 write_api = client.write_api(write_options=SYNCHRONOUS)
+
+
+@app.post("/create_tables")
+async def create_tables():
+    ms.execute("USE HeatVariant")
+    ms.execute(
+        "CREATE TABLE IF NOT EXISTS Apartments (Apartment_id INT PRIMARY KEY AUTO_INCREMENT, Mc_id VARCHAR(32), "
+        "Floor INT NOT NULL, Apt_number VARCHAR(32) NOT NULL, Email VARCHAR(32) NOT NULL, "
+        "Phone_number VARCHAR(32) NOT NULL)")
+    ms.execute(
+        "CREATE TABLE IF NOT EXISTS Microcontrollers (Mc_id INT PRIMARY KEY AUTO_INCREMENT, Mac_address VARCHAR(32), "
+        "Apartment_id INT, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
+    ms.execute("SHOW TABLES")
+    tables = ms.fetchall()
+    return tables
+
+
+async def startup():
+    try:
+        ms.execute("CREATE DATABASE IF NOT EXISTS HeatVariant")
+        print("DB HeatVariant created successfully.")
+        tables = await create_tables()
+        print("Tables created successfully.")
+        print(tables)
+    except mysql.connector.Error as err:
+        print("Something went wrong: {}".format(err))
 
 
 # region Classes
@@ -69,8 +87,6 @@ class Billing(BaseModel):
 # endregion
 
 # region InfluxDB
-
-
 @app.post("/get-air-data")
 async def get_temperature(data: AirData):
     print(f"Received temperature: {data.temperature}, Pressure: {data.pressure}, Humidity: {data.humidity}, "
@@ -98,7 +114,7 @@ async def deliver_data(data: AirData):
 # endregion
 
 # region MySQL
-@app.post("/insert_new_apartment")
+# @app.post("/insert_new_apartment")
 @app.post("/insert_seed_apartments")
 async def insert_seed_apartments():
     try:
@@ -114,18 +130,22 @@ async def insert_seed_apartments():
         print(f"Error: {err}")
 
 
-@app.post("/reset_apartment_table")
-async def reset_apartment_table():
+@app.post("/reset_tables")
+async def reset_tables():
     try:
         ms.execute("USE HeatVariant")
-        sql = "DROP TABLE Apartments"
-        ms.execute(sql)
-        ms.execute("CREATE TABLE Apartments (id INT PRIMARY KEY AUTO_INCREMENT, mc_id VARCHAR(32), "
-                   "floor INT, apt_number VARCHAR(32), email VARCHAR(32), phone_number VARCHAR(32))")
+        ms.execute("DROP TABLE IF EXISTS Apartments, Microcontrollers")
+        ms.execute(
+            "CREATE TABLE IF NOT EXISTS Apartments (Apartment_id INT PRIMARY KEY AUTO_INCREMENT, Mc_id VARCHAR(32), "
+            "Floor INT NOT NULL, Apt_number VARCHAR(32) NOT NULL, Email VARCHAR(32) NOT NULL, "
+            "Phone_number VARCHAR(32) NOT NULL)")
+        ms.execute("CREATE TABLE IF NOT EXISTS Microcontrollers (mc_id INT PRIMARY KEY AUTO_INCREMENT, "
+                   "mac_address VARCHAR(32), "
+                   "FOREIGN KEY (Apartment_id) REFERENCES Apartments (Apartment_id) VARCHAR(32))")
         msdb.commit()
     except mysql.connector.Error as err:
         print(f"Error: {err}")
-        
+
 
 @app.post("/apt_info")
 async def test(apartment: Apartment):
@@ -141,6 +161,7 @@ async def test(apartment: Apartment):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+asyncio.run(startup())
 
 # for value in range(5):
 #     point = (
