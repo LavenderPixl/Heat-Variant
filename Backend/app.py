@@ -36,11 +36,18 @@ async def create_tables():
     ms.execute("USE HeatVariant")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Apartments (Apartment_id INT PRIMARY KEY AUTO_INCREMENT, Mc_id VARCHAR(32), "
-        "Floor INT NOT NULL, Apt_number VARCHAR(32) NOT NULL, Email VARCHAR(32) NOT NULL, "
-        "Phone_number VARCHAR(32) NOT NULL)")
+        "Floor INT NOT NULL, Apt_number VARCHAR(32) NOT NULL)")
+    ms.execute(
+        "CREATE TABLE IF NOT EXISTS Residents (Resident_id INT PRIMARY KEY AUTO_INCREMENT, "
+        "first_name VARCHAR(32) NOT NULL, last_name VARCHAR(32) NOT NULL, Apartment_id INT, "
+        "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Microcontrollers (Mc_id INT PRIMARY KEY AUTO_INCREMENT, Mac_address VARCHAR(32), "
         "Apartment_id INT, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
+    ms.execute(
+        "CREATE TABLE IF NOT EXISTS Users (User_id INT PRIMARY KEY AUTO_INCREMENT, Email VARCHAR(32) NOT NULL, "
+        "Phone_number VARCHAR(32) NOT NULL, Apartment_id INT, "
+        "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute("SHOW TABLES")
     tables = ms.fetchall()
     return tables
@@ -50,9 +57,8 @@ async def startup():
     try:
         ms.execute("CREATE DATABASE IF NOT EXISTS HeatVariant")
         print("DB HeatVariant created successfully.")
-        tables = await create_tables()
         print("Tables created successfully.")
-        print(tables)
+        print(await create_tables())
     except mysql.connector.Error as err:
         print("Something went wrong: {}".format(err))
 
@@ -122,7 +128,9 @@ async def insert_seed_apartments():
         sql = "INSERT INTO Apartments (mc_id, floor, apt_number, email, phone_number) VALUES (%s, %s, %s, %s, %s)"
         val = [
             ("08:3A:F2:A8:C5:9C", 1, 2, "email@email.com", "22548032"),
-            ("NULL", 1, 3, "email2@email.com", "34194673")
+            ("NULL", 1, 3, "email2@email.com", "34194673"),
+            ("NULL", 1, 4, "email3@email.com", "34567843"),
+            ("NULL", 1, 5, "email4@email.com", "34198653")
         ]
         ms.executemany(sql, val)
         msdb.commit()
@@ -134,40 +142,22 @@ async def insert_seed_apartments():
 async def reset_tables():
     try:
         ms.execute("USE HeatVariant")
-        ms.execute("DROP TABLE IF EXISTS Apartments, Microcontrollers")
-        ms.execute(
-            "CREATE TABLE IF NOT EXISTS Apartments (Apartment_id INT PRIMARY KEY AUTO_INCREMENT, Mc_id VARCHAR(32), "
-            "Floor INT NOT NULL, Apt_number VARCHAR(32) NOT NULL, Email VARCHAR(32) NOT NULL, "
-            "Phone_number VARCHAR(32) NOT NULL)")
-        ms.execute("CREATE TABLE IF NOT EXISTS Microcontrollers (mc_id INT PRIMARY KEY AUTO_INCREMENT, "
-                   "mac_address VARCHAR(32), "
-                   "FOREIGN KEY (Apartment_id) REFERENCES Apartments (Apartment_id) VARCHAR(32))")
-        msdb.commit()
+        ms.execute("DROP TABLE IF EXISTS Apartments, Microcontrollers, Residents, Users")
+        print(await create_tables())
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
-
-@app.post("/apt_info")
-async def test(apartment: Apartment):
-    try:
-        print(f"Method used. Apartment: {apartment}")
-        return {"apartment": apartment.dict()}
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
+# @app.post("/apt_info")
+# async def test(apartment: Apartment):
+#     try:
+#         print(f"Method used. Apartment: {apartment}")
+#         return {"apartment": apartment.dict()}
+#     except Exception as e:
+#         print(f"An error occurred: {e}")
+#         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 # endregion
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
 asyncio.run(startup())
-
-# for value in range(5):
-#     point = (
-#         Point("measurement1")
-#         .tag("tagname1", "tagvalue1")
-#         .field("field1", value)
-#     )
-#     write_api.write(bucket=bucket, org=org, record=point)
-#     time.sleep(1)  # separate points by 1 second
