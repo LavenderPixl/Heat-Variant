@@ -35,8 +35,8 @@ write_api = client.write_api(write_options=SYNCHRONOUS)
 async def create_tables():
     ms.execute("USE HeatVariant")
     ms.execute(
-        "CREATE TABLE IF NOT EXISTS Apartments (Apartment_id INT PRIMARY KEY AUTO_INCREMENT, Mc_id VARCHAR(32), "
-        "Floor INT NOT NULL, Apt_number VARCHAR(32) NOT NULL)")
+        "CREATE TABLE IF NOT EXISTS Apartments (Apartment_id INT PRIMARY KEY AUTO_INCREMENT, Floor INT NOT NULL, "
+        "Apt_number VARCHAR(32) NOT NULL)")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Residents (Resident_id INT PRIMARY KEY AUTO_INCREMENT, "
         "first_name VARCHAR(32) NOT NULL, last_name VARCHAR(32) NOT NULL, Apartment_id INT, "
@@ -122,18 +122,34 @@ async def deliver_data(data: AirData):
 # region MySQL
 # @app.post("/insert_new_apartment")
 @app.post("/insert_seed_apartments")
-async def insert_seed_apartments():
+async def seed_data():
     try:
         ms.execute("USE HeatVariant")
-        sql = "INSERT INTO Apartments (mc_id, floor, apt_number, email, phone_number) VALUES (%s, %s, %s, %s, %s)"
-        val = [
-            ("08:3A:F2:A8:C5:9C", 1, 2, "email@email.com", "22548032"),
-            ("NULL", 1, 3, "email2@email.com", "34194673"),
-            ("NULL", 1, 4, "email3@email.com", "34567843"),
-            ("NULL", 1, 5, "email4@email.com", "34198653")
-        ]
-        ms.executemany(sql, val)
+        ms.executemany(
+            "INSERT INTO Apartments (floor, apt_number) VALUES (%s, %s)",
+            [
+                (1, 2), (1, 3), (1, 4), (1, 5)
+            ])
+        ms.executemany(
+            "INSERT INTO Microcontrollers (mac_address, apartment_id) VALUES (%s, %s)", [
+                ("08:3A:F2:A8:C5:9C", 1), ("Tester", 2)
+            ]
+        )
+        ms.executemany(
+            "INSERT INTO Residents (first_name, last_name, apartment_id) VALUES (%s, %s, %s)", [
+                ("John", "Doe", 1),
+                ("Jane", "Doe", 1),
+                ("Jenny", "Doe", 1),
+                ("Benny", "Johnson", 2)
+            ]
+        )
+        ms.executemany("INSERT INTO Users (email, phone_number, apartment_id) VALUES (%s, %s, %s)", [
+            ("john@email.com", "22314332", 1),
+            ("jane@email.com", "22314332", 1),
+            ("benny@email.com", "22314332", 2),
+        ])
         msdb.commit()
+        return "Seeded."
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
@@ -147,14 +163,6 @@ async def reset_tables():
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
-# @app.post("/apt_info")
-# async def test(apartment: Apartment):
-#     try:
-#         print(f"Method used. Apartment: {apartment}")
-#         return {"apartment": apartment.dict()}
-#     except Exception as e:
-#         print(f"An error occurred: {e}")
-#         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 # endregion
 
