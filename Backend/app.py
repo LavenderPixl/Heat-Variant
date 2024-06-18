@@ -10,6 +10,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 
 load_dotenv()
 app = FastAPI()
@@ -36,13 +37,13 @@ async def create_tables():
     ms.execute("USE HeatVariant")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Apartments (Apartment_id INT PRIMARY KEY AUTO_INCREMENT, Floor INT NOT NULL, "
-        "Apt_number VARCHAR(32) NOT NULL)")
+        "Apt_number VARCHAR(32) NOT NULL, UNIQUE INDEX unique_apt (apt_number, floor))")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Residents (Resident_id INT PRIMARY KEY AUTO_INCREMENT, "
         "first_name VARCHAR(32) NOT NULL, last_name VARCHAR(32) NOT NULL, Apartment_id INT, "
         "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute(
-        "CREATE TABLE IF NOT EXISTS Microcontrollers (Mc_id INT PRIMARY KEY AUTO_INCREMENT, Mac_address VARCHAR(32), "
+        "CREATE TABLE IF NOT EXISTS  Microcontrollers (Mc_id INT PRIMARY KEY AUTO_INCREMENT, Mac_address VARCHAR(32), "
         "Apartment_id INT, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Users (User_id INT PRIMARY KEY AUTO_INCREMENT, Email VARCHAR(32) NOT NULL, "
@@ -57,20 +58,37 @@ async def startup():
     try:
         ms.execute("CREATE DATABASE IF NOT EXISTS HeatVariant")
         print("DB HeatVariant created successfully.")
-        print("Tables created successfully.")
         print(await create_tables())
+        print("Tables created successfully.")
     except mysql.connector.Error as err:
         print("Something went wrong: {}".format(err))
 
 
 # region Classes
 class Apartment(BaseModel):
-    id: int
-    mc_id: str | None = None
+    apartment_id: Optional[int] = None
     floor: int
     apt_number: str
+
+
+class Microcontrollers(BaseModel):
+    mc_id: int
+    mac_address: str
+    apartment_id: int
+
+
+class Residents(BaseModel):
+    resident_id: int
+    first_name: str
+    last_name: str
+    apartment_id: int
+
+
+class Users(BaseModel):
+    user_id: int
     email: str
     phone_number: str
+    apartment_id: int
 
 
 class AirData(BaseModel):
@@ -120,7 +138,23 @@ async def deliver_data(data: AirData):
 # endregion
 
 # region MySQL
-# @app.post("/insert_new_apartment")
+@app.post("/insert_new_apartment")
+async def insert_new_apartment(apt: Apartment):
+    try:
+        ms.execute("SELECT floor, apt_number, COUNT(*) FROM Apartments WHERE floor = %s AND apt_number = %s",
+                   (apt.floor, apt.apt_number))
+        msg = ms.fetchone()
+        if msg[2] == 0:
+            try:
+                ms.execute(f"INSERT INTO Apartments(floor, apt_number) VALUES (%s, %s)",
+                           [apt.floor, apt.apt_number])
+            except mysql.connector.Error as err:
+                print(f"Error: {err}")
+            msdb.commit()
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+    
 @app.post("/insert_seed_apartments")
 async def seed_data():
     try:
