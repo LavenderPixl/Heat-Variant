@@ -86,7 +86,7 @@ void loop() {
   HTTPClient http;
 
   // Send request
-  String serverPath = "http://10.11.5.78:8000/get-air-data";
+  String serverPath = "http://10.11.6.168:8000/get-air-data";
   http.begin(client, serverPath);
   http.addHeader("Content-Type", "application/json");
   
