@@ -28,9 +28,9 @@ services:
       - slow-db:/var/lib/mysql
     environment:
       - MYSQL_ROOT_PASSWORD=Admin123
+      - MYSQL_ROOT_USER=root
+#      - MYSQL_PASSWORD=Admin123
       - MYSQL_DATABASE=Heat Variant
-      - MYSQL_USER=root
-      - MYSQL_PASSWORD=Admin123
     healthcheck:
       test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
       timeout: 10s
@@ -51,7 +51,9 @@ services:
       - DOCKER_INFLUXDB_INIT_USERNAME=Admin123
       - DOCKER_INFLUXDB_INIT_PASSWORD=Admin123
       - DOCKER_INFLUXDB_INIT_ORG=heat_variant
-      - DOCKER_INFLUXDB_INIT_BUCKET=variant
+      - DOCKER_INFLUXDB_INIT_BUCKET=air-data
+    env_file:
+      - ./.env
     healthcheck:
       test: "curl -f http://localhost:8086/ping"
       interval: 3s
