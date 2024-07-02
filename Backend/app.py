@@ -23,9 +23,9 @@ msdb = mysql.connector.connect(
 
 ms = msdb.cursor()
 
-token = os.getenv("INFLUXDB_TOKEN")
+token = os.getenv("DOCKER_INFLUXDB_INIT_ADMIN_TOKEN")
 org = "heat_variant"
-bucket = "Air Data"
+bucket = "air-data"
 influx_url = "http://172.0.0.2:8086"
 
 client = influxdb_client.InfluxDBClient(url=influx_url, token=token, org=org)
@@ -47,7 +47,7 @@ async def create_tables():
         "Apartment_id INT, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Users (User_id INT PRIMARY KEY AUTO_INCREMENT, Email VARCHAR(32) NOT NULL, "
-        "Phone_number VARCHAR(32) NOT NULL, Apartment_id INT, "
+        "Phone_number VARCHAR(32) NOT NULL, Password VARCHAR(225) NOT NULL, Apartment_id INT, Admin BOOL, "
         "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute("SHOW TABLES")
     tables = ms.fetchall()
@@ -59,6 +59,7 @@ async def startup():
         ms.execute("CREATE DATABASE IF NOT EXISTS HeatVariant")
         print("DB HeatVariant created successfully.")
         print(await create_tables())
+        await seed_apartments()
         print("Tables created successfully.")
     except mysql.connector.Error as err:
         print("Something went wrong: {}".format(err))
@@ -78,17 +79,19 @@ class Microcontrollers(BaseModel):
 
 
 class Residents(BaseModel):
-    resident_id: int
+    resident_id: Optional[int] = None
     first_name: str
     last_name: str
     apartment_id: int
 
 
 class Users(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None
+    apartment_id: int
     email: str
     phone_number: str
-    apartment_id: int
+    password: str
+    admin: bool
 
 
 class AirData(BaseModel):
@@ -101,7 +104,7 @@ class AirData(BaseModel):
 
 class Billing(BaseModel):
     apt_id: int
-    billing_id: int
+    billing_id: Optional[int] = None
     amount: float = 0.00
     date_issued: str | None = None
     date_paid: str | None = None
@@ -138,6 +141,7 @@ async def deliver_data(data: AirData):
 # endregion
 
 # region MySQL
+
 @app.post("/insert_new_apartment")
 async def insert_new_apartment(apt: Apartment):
     try:
@@ -148,14 +152,28 @@ async def insert_new_apartment(apt: Apartment):
             try:
                 ms.execute(f"INSERT INTO Apartments(floor, apt_number) VALUES (%s, %s)",
                            [apt.floor, apt.apt_number])
+                msdb.commit()
             except mysql.connector.Error as err:
                 print(f"Error: {err}")
-            msdb.commit()
+        else:
+            print(f"Error: Already exists apartment: {apt.floor}, {apt.apt_number}")
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
-    
-@app.post("/insert_seed_apartments")
+
+async def seed_apartments():
+    try:
+        ms.execute("USE HeatVariant")
+        ms.executemany(
+            "INSERT IGNORE INTO Apartments (floor, apt_number) VALUES (%s, %s)",
+            [(1, 1), (1, 2), (1, 3), (1, 4), (1, 5)]
+        )
+        msdb.commit()
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+
+@app.post("/insert_seed_data")
 async def seed_data():
     try:
         ms.execute("USE HeatVariant")
@@ -165,23 +183,27 @@ async def seed_data():
                 (1, 2), (1, 3), (1, 4), (1, 5)
             ])
         ms.executemany(
-            "INSERT INTO Microcontrollers (mac_address, apartment_id) VALUES (%s, %s)", [
-                ("08:3A:F2:A8:C5:9C", 1), ("Tester", 2)
+            "INSERT INTO Microcontrollers (mac_address, apartment_id) VALUES (%s, %s)",
+            [
+                ("08:3A:F2:A8:C5:9C", 1),
+                ("Tester", 2)
             ]
         )
         ms.executemany(
-            "INSERT INTO Residents (first_name, last_name, apartment_id) VALUES (%s, %s, %s)", [
+            "INSERT INTO Residents (first_name, last_name, apartment_id) VALUES (%s, %s, %s)",
+            [
                 ("John", "Doe", 1),
                 ("Jane", "Doe", 1),
                 ("Jenny", "Doe", 1),
                 ("Benny", "Johnson", 2)
             ]
         )
-        ms.executemany("INSERT INTO Users (email, phone_number, apartment_id) VALUES (%s, %s, %s)", [
-            ("john@email.com", "22314332", 1),
-            ("jane@email.com", "22314332", 1),
-            ("benny@email.com", "22314332", 2),
-        ])
+        ms.executemany("INSERT INTO Users (email, phone_number, password, apartment_id, admin) "
+                       "VALUES (%s, %s, %s, %s, %s)", [
+                           ("john@email.com", "22314332", "password123", 1, True),
+                           ("jane@email.com", "22314332", "password123", 1, False),
+                           ("benny@email.com", "22314332", "password123", 2, False),
+                       ])
         msdb.commit()
         return "Seeded."
     except mysql.connector.Error as err:
@@ -193,12 +215,44 @@ async def reset_tables():
     try:
         ms.execute("USE HeatVariant")
         ms.execute("DROP TABLE IF EXISTS Apartments, Microcontrollers, Residents, Users")
+        print("Resetting..")
         print(await create_tables())
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
 
 # endregion
+
+# region UserMethods
+
+@app.post("/create_user")
+async def create_user(new_user: Users):
+    try:
+        ms.execute("SELECT email, phone_number, COUNT(*) FROM Users WHERE email = %s AND phone_number = %s",
+                   (new_user.email, new_user.phone_number))
+        msg = ms.fetchone()
+        if msg[2] == 0:
+            print(msg[2])
+            try:
+                ms.execute("INSERT INTO Users (apartment_id, email, phone_number, password, admin) "
+                           "VALUES (%s, %s, %s, %s, %s)",
+                           (new_user.apartment_id, new_user.email,
+                            new_user.phone_number, new_user.password, new_user.admin))
+                print(f"New user: {new_user}")
+                msdb.commit()
+                return f"New user created: {new_user}"
+            except mysql.connector.Error as err:
+                print(f"Error: {err}")
+                return f"Error: {err}"
+        else:
+            return "User already exists."
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        return "Error: {err}"
+
+
+# endregion
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
