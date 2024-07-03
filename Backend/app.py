@@ -1,9 +1,10 @@
-﻿import datetime
-import http
+﻿import http
 import asyncio
+import datetime
 import influxdb_client, os, time
 import uvicorn
 import asyncio
+from _datetime import datetime
 import mysql.connector
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -48,7 +49,7 @@ async def create_tables():
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Users (User_id INT PRIMARY KEY AUTO_INCREMENT, Email VARCHAR(32) NOT NULL, "
         "Phone_number VARCHAR(32) NOT NULL, Password VARCHAR(225) NOT NULL, Apartment_id INT, Admin BOOL, "
-        "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
+        "Moved_in DATETIME, Moved_out DATETIME, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute("SHOW TABLES")
     tables = ms.fetchall()
     return tables
@@ -88,6 +89,8 @@ class Residents(BaseModel):
 class Users(BaseModel):
     user_id: Optional[int] = None
     apartment_id: int
+    moved_in: datetime
+    moved_out: Optional[datetime] = None
     email: str
     phone_number: str
     password: str
@@ -178,32 +181,35 @@ async def seed_data():
     try:
         ms.execute("USE HeatVariant")
         ms.executemany(
-            "INSERT INTO Apartments (floor, apt_number) VALUES (%s, %s)",
+            "INSERT IGNORE INTO Apartments (floor, apt_number) VALUES (%s, %s)",
             [
                 (1, 2), (1, 3), (1, 4), (1, 5)
             ])
+        print("Apartments Seeded.")
         ms.executemany(
-            "INSERT INTO Microcontrollers (mac_address, apartment_id) VALUES (%s, %s)",
+            "INSERT IGNORE INTO Microcontrollers (mac_address, apartment_id) VALUES (%s, %s)",
             [
                 ("08:3A:F2:A8:C5:9C", 1),
                 ("Tester", 2)
-            ]
-        )
+            ])
+        print("Microcontrollers Seeded.")
         ms.executemany(
-            "INSERT INTO Residents (first_name, last_name, apartment_id) VALUES (%s, %s, %s)",
+            "INSERT IGNORE INTO Residents (first_name, last_name, apartment_id) VALUES (%s, %s, %s)",
             [
                 ("John", "Doe", 1),
                 ("Jane", "Doe", 1),
                 ("Jenny", "Doe", 1),
                 ("Benny", "Johnson", 2)
-            ]
-        )
-        ms.executemany("INSERT INTO Users (email, phone_number, password, apartment_id, admin) "
-                       "VALUES (%s, %s, %s, %s, %s)", [
-                           ("john@email.com", "22314332", "password123", 1, True),
-                           ("jane@email.com", "22314332", "password123", 1, False),
-                           ("benny@email.com", "22314332", "password123", 2, False),
+            ])
+        print("Residents Seeded.")
+        ms.executemany("INSERT IGNORE INTO Users "
+                       "(email, phone_number, password, apartment_id, moved_in, moved_out, admin)"
+                       "VALUES (%s, %s, %s, %s, %s, %s, %s)", [
+                           ("john@email.com", "22314332", "password123", 1, datetime.now(), None, True),
+                           ("jane@email.com", "22314332", "password123", 1, datetime.now(), None, False),
+                           ("benny@email.com", "22314332", "password123", 2, datetime.now(), None, False),
                        ])
+        print("Users Seeded.")
         msdb.commit()
         return "Seeded."
     except mysql.connector.Error as err:
@@ -234,10 +240,10 @@ async def create_user(new_user: Users):
         if msg[2] == 0:
             print(msg[2])
             try:
-                ms.execute("INSERT INTO Users (apartment_id, email, phone_number, password, admin) "
-                           "VALUES (%s, %s, %s, %s, %s)",
+                ms.execute("INSERT INTO Users (apartment_id, email, phone_number, password, admin, moved_in) "
+                           "VALUES (%s, %s, %s, %s, %s,%s)",
                            (new_user.apartment_id, new_user.email,
-                            new_user.phone_number, new_user.password, new_user.admin))
+                            new_user.phone_number, new_user.password, new_user.admin, new_user.moved_in))
                 print(f"New user: {new_user}")
                 msdb.commit()
                 return f"New user created: {new_user}"
@@ -250,6 +256,34 @@ async def create_user(new_user: Users):
         print(f"Error: {err}")
         return "Error: {err}"
 
+
+@app.put("/make_user_inactive")
+async def make_user_inactive(userid: int):
+    try:
+        now = datetime.now()
+        print(f"new time: {now}")
+        ms.execute(f"UPDATE Users SET moved_out = current_date WHERE User_id = {userid}")
+        user = await get_user(userid)
+        msdb.commit()
+        print(f"User now inactive: {user}")
+        return user
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+
+@app.post("/get_user")
+async def get_user(userid: int):
+    try:
+        ms.execute(f"SELECT * FROM Users WHERE User_id = {userid}")
+        result = ms.fetchall()
+        # print(result)
+        return result
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+
+# async def login(user: Users) make_user_inactive SURE
+# MAKE SURE TO CHECK IF USER IS ACTIVE !! INACTIVE = NOT ABLE TO LOG IN!!!
 
 # endregion
 
