@@ -33,7 +33,7 @@ client = influxdb_client.InfluxDBClient(url=influx_url, token=token, org=org)
 write_api = client.write_api(write_options=SYNCHRONOUS)
 
 
-@app.post("/create_tables")
+@app.post("/create-tables")
 async def create_tables():
     ms.execute("USE HeatVariant")
     ms.execute(
@@ -42,14 +42,24 @@ async def create_tables():
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Residents (Resident_id INT PRIMARY KEY AUTO_INCREMENT, "
         "first_name VARCHAR(32) NOT NULL, last_name VARCHAR(32) NOT NULL, Apartment_id INT, "
-        "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
+        "Moved_in DATETIME, Moved_out DATETIME, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS  Microcontrollers (Mc_id INT PRIMARY KEY AUTO_INCREMENT, Mac_address VARCHAR(32), "
         "Apartment_id INT, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
     ms.execute(
         "CREATE TABLE IF NOT EXISTS Users (User_id INT PRIMARY KEY AUTO_INCREMENT, Email VARCHAR(32) NOT NULL, "
-        "Phone_number VARCHAR(32) NOT NULL, Password VARCHAR(225) NOT NULL, Apartment_id INT, Admin BOOL, "
-        "Moved_in DATETIME, Moved_out DATETIME, FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
+        "Phone_number VARCHAR(32) NOT NULL, Password VARCHAR(225) NOT NULL, Apartment_id INT, Admin BOOL, Active BOOL, "
+        "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
+
+
+    # ms.execute(
+    #     "DROP PROCEDURE IF EXISTS cleanOldData;"
+    #     "DELIMITER &&"
+    #     "CREATE STORED PROCEDURE cleanOldData IF NOT EXISTS AS"
+    #     "BEGIN"
+    #     "INSERT INTO Apartments(FLOOR, Apt_number) VALUES (100, unix_timestamp())"
+    #     "END && "
+    # )
     ms.execute("SHOW TABLES")
     tables = ms.fetchall()
     return tables
@@ -61,7 +71,7 @@ async def startup():
         print("DB HeatVariant created successfully.")
         print(await create_tables())
         await seed_apartments()
-        print("Tables created successfully.")
+        await create_admin()
     except mysql.connector.Error as err:
         print("Something went wrong: {}".format(err))
 
@@ -84,17 +94,18 @@ class Residents(BaseModel):
     first_name: str
     last_name: str
     apartment_id: int
+    moved_in: datetime
+    moved_out: Optional[datetime] = None
 
 
 class Users(BaseModel):
     user_id: Optional[int] = None
-    apartment_id: int
-    moved_in: datetime
-    moved_out: Optional[datetime] = None
+    apartment_id: Optional[int] = None
     email: str
     phone_number: str
     password: str
     admin: bool
+    active: bool
 
 
 class AirData(BaseModel):
@@ -117,8 +128,8 @@ class Billing(BaseModel):
 # endregion
 
 # region InfluxDB
-@app.post("/get-air-data")
-async def get_temperature(data: AirData):
+@app.post("/air/get-air-data")
+async def get_air_data(data: AirData):
     print(f"Received temperature: {data.temperature}, Pressure: {data.pressure}, Humidity: {data.humidity}, "
           f"Air Quality/Gas: {data.air_quality}, Mc_ID: {data.mc_id}")
     await deliver_data(data)
@@ -145,8 +156,8 @@ async def deliver_data(data: AirData):
 
 # region MySQL
 
-@app.post("/insert_new_apartment")
-async def insert_new_apartment(apt: Apartment):
+@app.post("/apartments/insert-apartment")
+async def insert_apartment(apt: Apartment):
     try:
         ms.execute("SELECT floor, apt_number, COUNT(*) FROM Apartments WHERE floor = %s AND apt_number = %s",
                    (apt.floor, apt.apt_number))
@@ -172,11 +183,12 @@ async def seed_apartments():
             [(1, 1), (1, 2), (1, 3), (1, 4), (1, 5)]
         )
         msdb.commit()
+        print("Tables created successfully.")
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
 
-@app.post("/insert_seed_data")
+@app.post("/mysql/seed-data")
 async def seed_data():
     try:
         ms.execute("USE HeatVariant")
@@ -216,7 +228,7 @@ async def seed_data():
         print(f"Error: {err}")
 
 
-@app.post("/reset_tables")
+@app.post("/mysql/reset-tables")
 async def reset_tables():
     try:
         ms.execute("USE HeatVariant")
@@ -230,8 +242,28 @@ async def reset_tables():
 # endregion
 
 # region UserMethods
+async def create_admin():
+    try:
+        print("Creating admin...")
+        ms.execute("SELECT email, phone_number, COUNT(*) FROM Users WHERE email = %s AND phone_number = %s",
+                   ("admin", "admin"))
+        msg = ms.fetchone()
+        if msg[2] == 0:
+            try:
+                ms.execute(
+                    "INSERT INTO Users (email, phone_number, password, admin, active) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    ("admin", "admin", "admin", True, True))
+                print("New Admin created.")
+                msdb.commit()
+                return "New Admin account created."
+            except mysql.connector.Error as err:
+                print(f"Error: {err}")
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
 
-@app.post("/create_user")
+
+@app.post("/create-user")
 async def create_user(new_user: Users):
     try:
         ms.execute("SELECT email, phone_number, COUNT(*) FROM Users WHERE email = %s AND phone_number = %s",
@@ -240,15 +272,14 @@ async def create_user(new_user: Users):
         if msg[2] == 0:
             print(msg[2])
             try:
-                ms.execute("INSERT INTO Users (apartment_id, email, phone_number, password, admin, moved_in) "
-                           "VALUES (%s, %s, %s, %s, %s,%s)",
+                ms.execute("INSERT INTO Users (apartment_id, email, phone_number, password, admin, active) "
+                           "VALUES (%s, %s, %s, %s, %s, %s)",
                            (new_user.apartment_id, new_user.email,
-                            new_user.phone_number, new_user.password, new_user.admin, new_user.moved_in))
+                            new_user.phone_number, new_user.password, new_user.admin, False))
                 print(f"New user: {new_user}")
                 msdb.commit()
                 return f"New user created: {new_user}"
             except mysql.connector.Error as err:
-                print(f"Error: {err}")
                 return f"Error: {err}"
         else:
             return "User already exists."
@@ -257,34 +288,67 @@ async def create_user(new_user: Users):
         return "Error: {err}"
 
 
-@app.put("/make_user_inactive")
-async def make_user_inactive(userid: int):
+@app.get("/residents")
+async def all_residents():
+    ms.execute(f"SELECT * FROM Residents")
+    return ms.fetchall()
+
+
+@app.get("/residents/{apartment-id}")
+async def get_residents(apartment_id: int):
+    ms.execute(f"SELECT * FROM Residents WHERE Apartment_id = {apartment_id}")
+    return ms.fetchall()
+
+
+@app.put("/user/deactivate")
+async def deactivate(apartment_id: int):
     try:
         now = datetime.now()
         print(f"new time: {now}")
-        ms.execute(f"UPDATE Users SET moved_out = current_date WHERE User_id = {userid}")
-        user = await get_user(userid)
+        ms.execute(f"UPDATE Residents SET moved_out = current_date WHERE Apartment_id = {apartment_id}")
+        ms.execute(f"UPDATE Users SET active = FALSE WHERE apartment_id = {apartment_id}")
+        residents = await get_residents(apartment_id)
         msdb.commit()
-        print(f"User now inactive: {user}")
-        return user
+        print(f"Users deactivated: {residents}")
+        print(f"Residents now moved out: {residents}")
+        return residents
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
 
-@app.post("/get_user")
+@app.get("/users")
+async def get_active_users():
+    ms.execute("SELECT * FROM Users WHERE active = TRUE")
+    return ms.fetchall()
+
+
+@app.get("/users/inactive")
+async def get_users():
+    ms.execute("SELECT * FROM Users WHERE active = FALSE")
+    return ms.fetchall()
+
+
+@app.get("/users/{apartment-id}")
+async def apartment_users(apartment_id: int):
+    try:
+        ms.execute(f"SELECT * FROM Users WHERE Apartment_id = {apartment_id}")
+        return ms.fetchall()
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+
+@app.get("/users/{userid}")
 async def get_user(userid: int):
     try:
-        ms.execute(f"SELECT * FROM Users WHERE User_id = {userid}")
-        result = ms.fetchall()
-        # print(result)
-        return result
+        ms.execute(f"SELECT 1 FROM Users WHERE User_id = {userid}")
+        return ms.fetchone()
     except mysql.connector.Error as err:
         print(f"Error: {err}")
 
 
-# async def login(user: Users) make_user_inactive SURE
+# async def login(user: Users) deactivate
 # MAKE SURE TO CHECK IF USER IS ACTIVE !! INACTIVE = NOT ABLE TO LOG IN!!!
-
+# LOGIN SETS ACTIVE = TRUE
 # endregion
 
 
