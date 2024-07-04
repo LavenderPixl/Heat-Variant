@@ -1,0 +1,1 @@
+﻿00 00 * * * mysqlcheck --user=root --password=secret-pass  --extended --auto-repair --all-databases && mysqlcheck --user=root --password=secret-pass --analyze --all-databases;

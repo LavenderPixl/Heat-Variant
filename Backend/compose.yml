@@ -21,6 +21,7 @@ services:
       frontend:
   mysql:
     image: mysql
+    #build: mysql/. #Bruges for at få CRONTAB til at slette brugere efter 6 måneder
     restart: always
     ports:
       - 8080:3306
@@ -29,8 +30,7 @@ services:
     environment:
       - MYSQL_ROOT_PASSWORD=Admin123
       - MYSQL_ROOT_USER=root
-#      - MYSQL_PASSWORD=Admin123
-      - MYSQL_DATABASE=Heat Variant
+      - MYSQL_DATABASE=HeatVariant
     healthcheck:
       test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
       timeout: 10s
