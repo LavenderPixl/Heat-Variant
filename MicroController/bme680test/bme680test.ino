@@ -18,7 +18,7 @@
 
 const char *ssid = "skpdatawifi";    // Change this to your WiFi SSID
 const char *password = "maske4040";  // Change this to your WiFi password
-const int httpPort = 8000;                // This should not be changed
+const int httpPort = 8000;           // This should not be changed
 
 Adafruit_BME680 bme; // I2C
 String macAddress;
@@ -31,7 +31,6 @@ void setup() {
   }
 
   // We start by connecting to a WiFi network
-
   Serial.println();
   Serial.println("**");
   Serial.print("Connecting to ");
@@ -86,20 +85,17 @@ void loop() {
   HTTPClient http;
 
   // Send request
-  String serverPath = "http://10.11.6.168:8000/get-air-data";
+  String serverPath = "http://10.11.6.168:8000/air/get-air-data";
   http.begin(client, serverPath);
   http.addHeader("Content-Type", "application/json");
   
   int result = http.POST(json);
   Serial.print(json);
   if (result > 0) {
-    // HTTP headers, response code, and body
     Serial.printf("HTTP Response code: %d\n", result);
     String payload = http.getString();
-    // Serial.println(payload);
   } else {
     // Error occurred
-    // Serial.printf("Error code: %d\n", result);
     Serial.println(http.errorToString(result).c_str());
   }
 
