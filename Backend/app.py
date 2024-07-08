@@ -106,7 +106,7 @@ class Users(BaseModel):
     phone_number: str
     password: str
     admin: bool
-    active: bool
+    active: bool = False
 
 
 class AirData(BaseModel):
@@ -156,24 +156,6 @@ async def deliver_data(data: AirData):
 # endregion
 
 # region MySQL
-@app.get("/apartments/")
-@app.post("/apartments/insert-apartment")
-async def insert_apartment(apt: Apartment):
-    try:
-        ms.execute("SELECT floor, apt_number, COUNT(*) FROM Apartments WHERE floor = %s AND apt_number = %s",
-                   (apt.floor, apt.apt_number))
-        msg = ms.fetchone()
-        if msg[2] == 0:
-            try:
-                ms.execute(f"INSERT INTO Apartments(floor, apt_number) VALUES (%s, %s)",
-                           [apt.floor, apt.apt_number])
-                msdb.commit()
-            except mysql.connector.Error as err:
-                print(f"Database Error: {err}")
-        else:
-            print(f"Error: Already exists apartment: {apt.floor}, {apt.apt_number}")
-    except mysql.connector.Error as err:
-        print(f"Database Error: {err}")
 
 
 async def seed_apartments():
@@ -243,6 +225,49 @@ async def reset_tables():
 
 # endregion
 
+# region ApartmentMethods
+
+# Gets all apartments in the system, where a user is attached.
+@app.get("/apartments")
+async def get_apartments():
+    try:
+        ms.execute("SELECT * FROM Apartments INNER JOIN Users WHERE Apartments.apartment_id = Users.apartment_id")
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
+
+
+@app.get("/apartments/available")
+async def available_apartments():
+    try:
+        ms.execute("SELECT * FROM Apartments WHERE NOT EXISTS "
+                   "(SELECT apartment_id FROM Users WHERE Apartments.apartment_id=Users.apartment_id AND Active = True)")
+        available = ms.fetchall()
+        return available
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
+
+
+@app.post("/apartments/insert-apartment")
+async def insert_apartment(apt: Apartment):
+    try:
+        ms.execute("SELECT floor, apt_number, COUNT(*) FROM Apartments WHERE floor = %s AND apt_number = %s",
+                   (apt.floor, apt.apt_number))
+        msg = ms.fetchone()
+        if msg[2] == 0:
+            try:
+                ms.execute(f"INSERT INTO Apartments(floor, apt_number) VALUES (%s, %s)",
+                           [apt.floor, apt.apt_number])
+                msdb.commit()
+            except mysql.connector.Error as err:
+                print(f"Database Error: {err}")
+        else:
+            print(f"Error: Already exists apartment: {apt.floor}, {apt.apt_number}")
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
+
+
+# endregoin
+
 # region UserMethods
 async def create_admin():
     try:
@@ -265,28 +290,40 @@ async def create_admin():
         print(f"Database Error: {err}")
 
 
-@app.post("/create-user")
-async def create_user(new_user: Users):
+async def create_user(new_user: Users, apartment_id: int) -> Users:
     try:
         ms.execute("SELECT email, phone_number, COUNT(*) FROM Users WHERE email = %s AND phone_number = %s",
                    (new_user.email, new_user.phone_number))
         msg = ms.fetchone()
         if msg[2] == 0:
-            print(msg[2])
             try:
+                new_pass = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(9))
                 ms.execute("INSERT INTO Users (apartment_id, email, phone_number, password, admin, active) "
                            "VALUES (%s, %s, %s, %s, %s, %s)",
-                           (new_user.apartment_id, new_user.email,
-                            new_user.phone_number, new_user.password, new_user.admin, False))
-                print(f"New user: {new_user}")
-                msdb.commit()
-                return f"New user created: {new_user}"
+                           (apartment_id, new_user.email,
+                            new_user.phone_number, new_pass, new_user.admin, False))
+                return new_user
             except mysql.connector.Error as err:
-                return f"Database Error: {err}"
+                raise HTTPException(status_code=500, detail=f"Database Error: {err}")
         else:
-            return "User already exists."
+            # User already exists.
+            return HTTPException(status_code=500, detail=f"User Already Exists.")
     except mysql.connector.Error as err:
-        return "Database Error: {err}"
+        raise HTTPException(status_code=500, detail=f"Database Error: {err}")
+
+
+async def create_resident(resident_list: list[Residents],
+                          apartment_id: int = Body(..., embed=True)):
+    print(resident_list)
+    try:
+        data = [(resident.first_name, resident.last_name, apartment_id, resident.moved_in)
+                for resident in resident_list]
+        ms.executemany(
+            "INSERT INTO Residents (first_name, last_name, apartment_id, moved_in) VALUES (%s, %s, %s, %s)",
+            data
+        )
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Database Error: {err}")
 
 
 @app.get("/residents")
@@ -341,6 +378,15 @@ async def change_password(email: str = Body(..., embed=True), password: str = Bo
         print(f"Database Error: {err}")
 
 
+@app.get("/user")
+async def get_user(userid: int = Body(..., embed=True)):
+    try:
+        ms.execute(f"SELECT * FROM Users WHERE User_id = {userid}")
+        return ms.fetchone()
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
+
+
 @app.get("/users")
 async def get_active_users():
     ms.execute("SELECT * FROM Users WHERE active = TRUE")
@@ -362,11 +408,20 @@ async def apartment_users(apartment_id: int = Body(..., embed=True)):
         print(f"Database Error: {err}")
 
 
-@app.get("/user")
-async def get_user(userid: int = Body(..., embed=True)):
+@app.post("/users/move-in")
+async def move_in(user: Users, apartment: Apartment, residents_list: list[Residents]):
     try:
-        ms.execute(f"SELECT * FROM Users WHERE User_id = {userid}")
-        return ms.fetchone()
+        ms.execute("SELECT apartment_id FROM Apartments WHERE floor = %s AND apt_number = %s",
+                               (apartment.floor, apartment.apt_number))
+        apartment = ms.fetchone()
+        if not apartment:
+            raise HTTPException(status_code=404, detail="Apartment not found")
+        apartment_id = apartment[0]
+        
+        print(await create_user(user, apartment_id))
+        print(await create_resident(residents_list, apartment_id))
+        msdb.commit()
+        return user
     except mysql.connector.Error as err:
         print(f"Database Error: {err}")
 

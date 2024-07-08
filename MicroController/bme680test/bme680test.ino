@@ -16,8 +16,8 @@
 #define BME_MOSI 11
 #define BME_CS 10
 
-const char *ssid = "skpdatawifi";    // Change this to your WiFi SSID
-const char *password = "maske4040";  // Change this to your WiFi password
+const char *ssid = "The Internet";    // Change this to your WiFi SSID
+const char *password = "If0You1Find1This2Password3You5Can8Use13My21Internet34Freely55";  // Change this to your WiFi password
 const int httpPort = 8000;           // This should not be changed
 
 Adafruit_BME680 bme; // I2C
@@ -85,7 +85,7 @@ void loop() {
   HTTPClient http;
 
   // Send request
-  String serverPath = "http://10.11.6.168:8000/air/get-air-data";
+  String serverPath = "http://10.3.7.120:8000/air/get-air-data";
   http.begin(client, serverPath);
   http.addHeader("Content-Type", "application/json");
   
