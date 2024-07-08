@@ -1,6 +1,8 @@
 ﻿import http
 import asyncio
 import datetime
+import string
+import random
 import influxdb_client, os, time
 import uvicorn
 import asyncio
@@ -9,7 +11,7 @@ import mysql.connector
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Body
 from pydantic import BaseModel
 from typing import Optional
 
@@ -50,7 +52,6 @@ async def create_tables():
         "CREATE TABLE IF NOT EXISTS Users (User_id INT PRIMARY KEY AUTO_INCREMENT, Email VARCHAR(32) NOT NULL, "
         "Phone_number VARCHAR(32) NOT NULL, Password VARCHAR(225) NOT NULL, Apartment_id INT, Admin BOOL, Active BOOL, "
         "FOREIGN KEY (Apartment_id) REFERENCES Apartments(Apartment_id))")
-
 
     # ms.execute(
     #     "DROP PROCEDURE IF EXISTS cleanOldData;"
@@ -155,7 +156,7 @@ async def deliver_data(data: AirData):
 # endregion
 
 # region MySQL
-
+@app.get("/apartments/")
 @app.post("/apartments/insert-apartment")
 async def insert_apartment(apt: Apartment):
     try:
@@ -168,11 +169,11 @@ async def insert_apartment(apt: Apartment):
                            [apt.floor, apt.apt_number])
                 msdb.commit()
             except mysql.connector.Error as err:
-                print(f"Error: {err}")
+                print(f"Database Error: {err}")
         else:
             print(f"Error: Already exists apartment: {apt.floor}, {apt.apt_number}")
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
 
 
 async def seed_apartments():
@@ -185,7 +186,7 @@ async def seed_apartments():
         msdb.commit()
         print("Tables created successfully.")
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
 
 
 @app.post("/mysql/seed-data")
@@ -206,26 +207,27 @@ async def seed_data():
             ])
         print("Microcontrollers Seeded.")
         ms.executemany(
-            "INSERT IGNORE INTO Residents (first_name, last_name, apartment_id) VALUES (%s, %s, %s)",
+            "INSERT IGNORE INTO Residents (first_name, last_name, apartment_id, moved_in, moved_out) VALUES "
+            "(%s, %s, %s, %s, %s)",
             [
-                ("John", "Doe", 1),
-                ("Jane", "Doe", 1),
-                ("Jenny", "Doe", 1),
-                ("Benny", "Johnson", 2)
+                ("John", "Doe", 1, datetime.now(), None),
+                ("Jane", "Doe", 1, datetime.now(), None),
+                ("Jenny", "Doe", 1, datetime.now(), None),
+                ("Benny", "Johnson", 2, datetime.now(), None)
             ])
         print("Residents Seeded.")
         ms.executemany("INSERT IGNORE INTO Users "
-                       "(email, phone_number, password, apartment_id, moved_in, moved_out, admin)"
-                       "VALUES (%s, %s, %s, %s, %s, %s, %s)", [
-                           ("john@email.com", "22314332", "password123", 1, datetime.now(), None, True),
-                           ("jane@email.com", "22314332", "password123", 1, datetime.now(), None, False),
-                           ("benny@email.com", "22314332", "password123", 2, datetime.now(), None, False),
+                       "(email, phone_number, password, apartment_id, admin, active)"
+                       "VALUES (%s, %s, %s, %s, %s, %s)", [
+                           ("john@email.com", "22314332", "password123", 1, True, True),
+                           ("jane@email.com", "22314332", "password123", 1, False, True),
+                           ("benny@email.com", "22314332", "password123", 2, False, True),
                        ])
         print("Users Seeded.")
         msdb.commit()
         return "Seeded."
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
 
 
 @app.post("/mysql/reset-tables")
@@ -236,7 +238,7 @@ async def reset_tables():
         print("Resetting..")
         print(await create_tables())
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
 
 
 # endregion
@@ -258,9 +260,9 @@ async def create_admin():
                 msdb.commit()
                 return "New Admin account created."
             except mysql.connector.Error as err:
-                print(f"Error: {err}")
+                print(f"Database Error: {err}")
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
 
 
 @app.post("/create-user")
@@ -280,12 +282,11 @@ async def create_user(new_user: Users):
                 msdb.commit()
                 return f"New user created: {new_user}"
             except mysql.connector.Error as err:
-                return f"Error: {err}"
+                return f"Database Error: {err}"
         else:
             return "User already exists."
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        return "Error: {err}"
+        return "Database Error: {err}"
 
 
 @app.get("/residents")
@@ -313,7 +314,21 @@ async def deactivate(apartment_id: int):
         print(f"Residents now moved out: {residents}")
         return residents
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
+
+
+@app.put("/user/reset-login")
+async def reset_login(email: str = Body(..., embed=True)):
+    if email is None:
+        raise HTTPException(status_code=422, detail="Email is required")
+    new_pass = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(9))
+    try:
+        ms.execute("UPDATE Users SET password = %s WHERE email = %s",
+                   (new_pass, email))
+        msdb.commit()
+        return "New password: " + new_pass
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
 
 
 @app.get("/users")
@@ -334,7 +349,7 @@ async def apartment_users(apartment_id: int):
         ms.execute(f"SELECT * FROM Users WHERE Apartment_id = {apartment_id}")
         return ms.fetchall()
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
 
 
 @app.get("/users/{userid}")
@@ -343,7 +358,7 @@ async def get_user(userid: int):
         ms.execute(f"SELECT 1 FROM Users WHERE User_id = {userid}")
         return ms.fetchone()
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
+        print(f"Database Error: {err}")
 
 
 # async def login(user: Users) deactivate
