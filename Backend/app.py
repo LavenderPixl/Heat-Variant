@@ -331,6 +331,16 @@ async def reset_login(email: str = Body(..., embed=True)):
         print(f"Database Error: {err}")
 
 
+@app.put("/user/change-password")
+async def change_password(email: str = Body(..., embed=True), password: str = Body(..., embed=True),
+                          new_password: str = Body(..., embed=True)):
+    try:
+        ("UPDATE Users SET password = %s WHERE email = %s AND password = %s",
+         (new_password, email, password))
+    except mysql.connector.Error as err:
+        print(f"Database Error: {err}")
+
+
 @app.get("/users")
 async def get_active_users():
     ms.execute("SELECT * FROM Users WHERE active = TRUE")
@@ -343,8 +353,8 @@ async def get_users():
     return ms.fetchall()
 
 
-@app.get("/users/{apartment-id}")
-async def apartment_users(apartment_id: int):
+@app.get("/users/apartment")
+async def apartment_users(apartment_id: int = Body(..., embed=True)):
     try:
         ms.execute(f"SELECT * FROM Users WHERE Apartment_id = {apartment_id}")
         return ms.fetchall()
@@ -352,10 +362,10 @@ async def apartment_users(apartment_id: int):
         print(f"Database Error: {err}")
 
 
-@app.get("/users/{userid}")
-async def get_user(userid: int):
+@app.get("/user")
+async def get_user(userid: int = Body(..., embed=True)):
     try:
-        ms.execute(f"SELECT 1 FROM Users WHERE User_id = {userid}")
+        ms.execute(f"SELECT * FROM Users WHERE User_id = {userid}")
         return ms.fetchone()
     except mysql.connector.Error as err:
         print(f"Database Error: {err}")
