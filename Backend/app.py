@@ -226,7 +226,6 @@ async def reset_tables():
 # endregion
 
 # region ApartmentMethods
-
 # Gets all apartments in the system, where a user is attached.
 @app.get("/apartments")
 async def get_apartments():
@@ -266,7 +265,7 @@ async def insert_apartment(apt: Apartment):
         print(f"Database Error: {err}")
 
 
-# endregoin
+# endregion
 
 # region UserMethods
 async def create_admin():
@@ -332,14 +331,14 @@ async def all_residents():
     return ms.fetchall()
 
 
-@app.get("/residents/{apartment-id}")
-async def get_residents(apartment_id: int):
+@app.get("/residents/apartment")
+async def get_residents(apartment_id: int = Body(..., embed=True)):
     ms.execute(f"SELECT * FROM Residents WHERE Apartment_id = {apartment_id}")
     return ms.fetchall()
 
 
 @app.put("/user/deactivate")
-async def deactivate(apartment_id: int):
+async def deactivate(apartment_id: int = Body(..., embed=True)):
     try:
         now = datetime.now()
         print(f"new time: {now}")
@@ -408,28 +407,34 @@ async def apartment_users(apartment_id: int = Body(..., embed=True)):
         print(f"Database Error: {err}")
 
 
+@app.put("/users/move-out")
+async def move_out(apartment_id: int = Body(..., embed=True)):
+    try:
+        ms.execute("UPDATE Users SET Active = FALSE WHERE apartment_id = %s",
+                   apartment_id)
+        ms.execute()
+    except mysql.connector.Error as err:
+        return HTTPException(status_code=500, detail=f"Database Error: {err}")
+        print(f"Database Error: {err}")
+
+
 @app.post("/users/move-in")
 async def move_in(user: Users, apartment: Apartment, residents_list: list[Residents]):
     try:
         ms.execute("SELECT apartment_id FROM Apartments WHERE floor = %s AND apt_number = %s",
-                               (apartment.floor, apartment.apt_number))
+                   (apartment.floor, apartment.apt_number))
         apartment = ms.fetchone()
         if not apartment:
             raise HTTPException(status_code=404, detail="Apartment not found")
         apartment_id = apartment[0]
-        
+
         print(await create_user(user, apartment_id))
         print(await create_resident(residents_list, apartment_id))
         msdb.commit()
         return user
     except mysql.connector.Error as err:
         print(f"Database Error: {err}")
-
-
-# async def login(user: Users) deactivate
-# MAKE SURE TO CHECK IF USER IS ACTIVE !! INACTIVE = NOT ABLE TO LOG IN!!!
-# LOGIN SETS ACTIVE = TRUE
-# endregion
+        return HTTPException(status_code=500, detail=f"Database Error: {err}")
 
 
 if __name__ == "__main__":
