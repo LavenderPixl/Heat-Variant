@@ -129,7 +129,7 @@ class Billing(BaseModel):
 # endregion
 
 # region InfluxDB
-@app.post("/air/get-air-data")
+@app.post("/air/data")
 async def get_air_data(data: AirData):
     print(f"Received temperature: {data.temperature}, Pressure: {data.pressure}, Humidity: {data.humidity}, "
           f"Air Quality/Gas: {data.air_quality}, Mc_ID: {data.mc_id}")
