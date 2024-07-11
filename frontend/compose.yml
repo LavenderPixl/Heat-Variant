@@ -1,11 +1,10 @@
-﻿version: '3.7'
-
-services:
+﻿services:
   frontend:
     container_name: vue-app
     build:
       context: .
       dockerfile: Dockerfile
+    command: npm run serve
     volumes:
       - '.:/app'
       - '/app/node_modules'
