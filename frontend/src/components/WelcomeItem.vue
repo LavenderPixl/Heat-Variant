@@ -1,4 +1,4 @@
-<!-- <template>
+<template>
   <div class="item">
     <i>
       <slot name="icon"></slot>
@@ -11,16 +11,6 @@
     </div>
   </div>
 </template>
--->
-<template>
-  <div class="item">
-      <h3 title="Welcome Item?">
-
-      </h3>
-  </div>
-</template>
-
-<!--
 
 <style scoped>
 .item {
@@ -40,7 +30,6 @@ i {
   place-content: center;
   width: 32px;
   height: 32px;
-
   color: var(--color-text);
 }
 
@@ -94,4 +83,4 @@ h3 {
     display: none;
   }
 }
-</style> -->
+</style>
